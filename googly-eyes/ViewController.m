@@ -48,7 +48,7 @@
     v.center = CGPointMake(self.pupil.bounds.size.width/2, self.pupil.bounds.size.height/2);
     v.backgroundColor = [UIColor blackColor];
     v.layer.cornerRadius = v.bounds.size.width / 2;
-    v.transform = CGAffineTransformMakeScale(3, 3);
+    v.transform = CGAffineTransformMakeScale(5, 5);
     
     // self.backgroundColor = [UIColor whiteColor];
     
@@ -63,8 +63,8 @@
     
     self.behavior = [[UIDynamicItemBehavior alloc] initWithItems:@[self.pupil]];
     [self.animator addBehavior:self.behavior];
-    self.behavior.friction = 0.4;
-    self.behavior.elasticity = 0.05;
+    self.behavior.friction = 0.3;
+    self.behavior.elasticity = 0.06;
     self.behavior.resistance = 0.2;
     
     return self;
@@ -121,19 +121,22 @@
 
 
 
-@interface ViewController () <DetectFaceDelegate, RPPreviewViewControllerDelegate> {
+@interface ViewController () <DetectFaceDelegate, RPPreviewViewControllerDelegate, RPScreenRecorderDelegate> {
     CGPoint _centerAtStart;
     NSInteger _framesWithTooManyEyes;
 }
 
 // @property (nonatomic) Eye *eye1;
-@property (nonatomic) UIView *previewView;
 @property (nonatomic) DetectFace *detector;
 @property (nonatomic) NSMutableArray *eyePairs;
 @property (nonatomic) RPScreenRecorder *recorder;
-@property (nonatomic) UIButton *shutter;
 @property (nonatomic) BOOL recording;
+@property (nonatomic) AVCaptureDevicePosition curCamera;
 
+@property (nonatomic) IBOutlet UIView *previewView;
+@property (nonatomic) IBOutlet UIView *eyeView;
+@property (nonatomic) IBOutlet UIButton *toggleCameraButton;
+@property (nonatomic) IBOutlet UIButton *shutter;
 
 @end
 
@@ -144,46 +147,51 @@
     
     self.eyePairs = [NSMutableArray new];
     
-    self.previewView = [[UIView alloc] initWithFrame:self.view.bounds];
-    self.previewView.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
-    [self.view addSubview:self.previewView];
+    BOOL frontCamera = [UIImagePickerController isCameraDeviceAvailable:UIImagePickerControllerCameraDeviceFront];
+    BOOL backCamera = [UIImagePickerController isCameraDeviceAvailable:UIImagePickerControllerCameraDeviceRear];
+    self.toggleCameraButton.hidden = !(frontCamera && backCamera);
+    self.curCamera = frontCamera ? AVCaptureDevicePositionFront : AVCaptureDevicePositionBack;
     
-    /*self.eye1 = [Eye new];
-    [self.view addSubview:self.eye1];
-    self.eye1.center = CGPointMake(120, 120);
-    self.view.backgroundColor = [UIColor grayColor];
-    [self.view addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panned:)]];*/
+    [self screenRecorderDidChangeAvailability:[RPScreenRecorder sharedRecorder]];
+    [[RPScreenRecorder sharedRecorder] setDelegate:self];
+}
+
+- (void)screenRecorderDidChangeAvailability:(RPScreenRecorder *)screenRecorder {
+    self.shutter.hidden = ![[RPScreenRecorder sharedRecorder] isAvailable];
+}
+
+- (void)screenRecorder:(RPScreenRecorder *)screenRecorder didStopRecordingWithError:(NSError *)error previewViewController:(RPPreviewViewController *)previewViewController {
+    self.recording = NO;
+    self.view.userInteractionEnabled = YES;
+    
+    if (!error) {
+        previewViewController.previewControllerDelegate = self;
+        [self presentViewController:previewViewController animated:YES completion:nil];
+    }
+}
+
+- (void)setCurCamera:(AVCaptureDevicePosition)curCamera {
+    _curCamera = curCamera;
+    
+    [self.detector stopDetection];
+    self.detector.delegate = nil;
     
     self.detector = [DetectFace new];
     self.detector.previewView = self.previewView;
     self.detector.delegate = self;
-    [self.detector startDetection];
-    
-    self.shutter = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.shutter.layer.borderWidth = 2;
-    self.shutter.frame = CGRectMake(0, 0, 100, 100);
-    self.shutter.layer.cornerRadius = 50;
-    self.shutter.center = CGPointMake(self.view.bounds.size.width/2, self.view.bounds.size.height - 70);
-    self.shutter.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleTopMargin;
-    self.recording = NO;
-    [self.view addSubview:self.shutter];
-    [self.shutter addTarget:self action:@selector(toggleRecording) forControlEvents:UIControlEventTouchUpInside];
+    [self.detector startDetectionWithCamera:self.curCamera];
+}
+
+- (IBAction)toggleCamera:(id)sender {
+    self.curCamera = (self.curCamera == AVCaptureDevicePositionFront) ? AVCaptureDevicePositionBack : AVCaptureDevicePositionFront;
 }
 
 - (void)setRecording:(BOOL)recording {
     _recording = recording;
-    if (recording) {
-        [self.shutter setTitle:NSLocalizedString(@"Stop", @"") forState:UIControlStateNormal];
-        [self.shutter setTitleColor:[UIColor colorWithRed:1 green:0.3 blue:0.3 alpha:1] forState:UIControlStateNormal];
-        self.shutter.layer.borderColor = [UIColor colorWithRed:1 green:0.3 blue:0.3 alpha:1].CGColor;
-    } else {
-        [self.shutter setTitle:NSLocalizedString(@"Record", @"") forState:UIControlStateNormal];
-        [self.shutter setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        self.shutter.layer.borderColor = [UIColor whiteColor].CGColor;
-    }
+    [self.shutter setImage:[UIImage imageNamed:(recording ? @"Finish" : @"Record")] forState:UIControlStateNormal];
 }
 
-- (void)toggleRecording {
+- (IBAction)toggleRecording:(id)sender {
     self.view.userInteractionEnabled = NO;
     if (!self.recording) {
         self.recording = YES;
@@ -194,11 +202,12 @@
     } else {
         self.recording = NO;
         [[RPScreenRecorder sharedRecorder] stopRecordingWithHandler:^(RPPreviewViewController * _Nullable previewViewController, NSError * _Nullable error) {
-            if (!error) {
+            [self screenRecorder:[RPScreenRecorder sharedRecorder] didStopRecordingWithError:error previewViewController:previewViewController];
+            /*if (!error) {
                 previewViewController.previewControllerDelegate = self;
                 [self presentViewController:previewViewController animated:YES completion:nil];
             }
-            self.view.userInteractionEnabled = YES;
+            self.view.userInteractionEnabled = YES;*/
         }];
     }
 }
@@ -236,10 +245,12 @@
         // faceRect = [DetectFace convertFrame:faceRect previewBox:previewBox forVideoBox:clap isMirrored:YES];
         // CGFloat eyeSize = (faceRect.size.width + faceRect.size.height)/2 * 0.1;
         
+        BOOL mirrored = self.curCamera == AVCaptureDevicePositionFront;
+        
         CGRect leftEye = CGRectMake(ff.leftEyePosition.x - ff.bounds.size.width * 0.05, ff.leftEyePosition.y - ff.bounds.size.height * 0.05, ff.bounds.size.width * 0.1, ff.bounds.size.height * 0.1);
-        leftEye = [DetectFace convertFrame:leftEye previewBox:previewBox forVideoBox:clap isMirrored:YES];
+        leftEye = [DetectFace convertFrame:leftEye previewBox:previewBox forVideoBox:clap isMirrored:mirrored];
         CGRect rightEye = CGRectMake(ff.rightEyePosition.x - ff.bounds.size.width * 0.05, ff.rightEyePosition.y - ff.bounds.size.height * 0.05, ff.bounds.size.width * 0.1, ff.bounds.size.height * 0.1);
-        rightEye = [DetectFace convertFrame:rightEye previewBox:previewBox forVideoBox:clap isMirrored:YES];
+        rightEye = [DetectFace convertFrame:rightEye previewBox:previewBox forVideoBox:clap isMirrored:mirrored];
         
         CGFloat nativeEyeRadius = sqrt(pow(140, 2) * 2)/2;
         CGFloat s = 3;
@@ -254,11 +265,11 @@
             Eye *eye1 = [Eye new];
             eye1.center = left;
             eye1.scale = leftEyeRadius / nativeEyeRadius;
-            [self.view addSubview:eye1];
+            [self.eyeView addSubview:eye1];
             Eye *eye2 = [Eye new];
             eye2.center = right;
             eye2.scale = rightEyeRadius / nativeEyeRadius;
-            [self.view addSubview:eye2];
+            [self.eyeView addSubview:eye2];
             [self.eyePairs addObject:@[eye1, eye2]];
         }
         NSArray *pair = nil;

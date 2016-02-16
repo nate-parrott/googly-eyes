@@ -19,6 +19,8 @@ static CGFloat DegreesToRadians(CGFloat degrees) {return degrees * M_PI / 180;};
 @property (nonatomic, strong) AVCaptureVideoDataOutput *videoDataOutput;
 @property (nonatomic, strong) dispatch_queue_t videoDataOutputQueue;
 @property (nonatomic, strong) CIDetector *faceDetector;
+@property (nonatomic) AVCaptureDevicePosition position;
+@property (nonatomic) AVCaptureSession *session;
 
 @end
 
@@ -28,6 +30,7 @@ static CGFloat DegreesToRadians(CGFloat degrees) {return degrees * M_PI / 180;};
 {
 	
 	AVCaptureSession *session = [AVCaptureSession new];
+    self.session = session;
     [session setSessionPreset:AVCaptureSessionPreset640x480];
 	
     // Select a video device, make an input
@@ -36,12 +39,10 @@ static CGFloat DegreesToRadians(CGFloat degrees) {return degrees * M_PI / 180;};
     //in real app you would use camera that user chose
     if([UIImagePickerController isCameraDeviceAvailable:UIImagePickerControllerCameraDeviceFront]) {
         for (AVCaptureDevice *d in [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo]) {
-            if ([d position] == AVCaptureDevicePositionFront)
+            if ([d position] == self.position)
                 device = d;
         }
     }
-    else
-        exit(0);
     
 	NSError *error = nil;
 	AVCaptureDeviceInput *deviceInput = [AVCaptureDeviceInput deviceInputWithDevice:device error:&error];
@@ -70,7 +71,7 @@ static CGFloat DegreesToRadians(CGFloat degrees) {return degrees * M_PI / 180;};
 	
 	self.previewLayer = [[AVCaptureVideoPreviewLayer alloc] initWithSession:session];
 	[self.previewLayer setBackgroundColor:[[UIColor blackColor] CGColor]];
-	[self.previewLayer setVideoGravity:AVLayerVideoGravityResizeAspect];
+	[self.previewLayer setVideoGravity:AVLayerVideoGravityResizeAspectFill];
 	CALayer *rootLayer = [self.previewView layer];
 	[rootLayer setMasksToBounds:YES];
 	[self.previewLayer setFrame:[rootLayer bounds]];
@@ -124,8 +125,8 @@ static CGFloat DegreesToRadians(CGFloat degrees) {return degrees * M_PI / 180;};
 	});
 }
 
-- (void)startDetection
-{   
+- (void)startDetectionWithCamera:(AVCaptureDevicePosition)position {
+    self.position = position;
     [self setupAVCapture];
     [[self.videoDataOutput connectionWithMediaType:AVMediaTypeVideo] setEnabled:YES];
     NSDictionary *detectorOptions = @{CIDetectorAccuracy : CIDetectorAccuracyLow, CIDetectorReturnSubFeatures: @YES};
@@ -142,6 +143,9 @@ static CGFloat DegreesToRadians(CGFloat degrees) {return degrees * M_PI / 180;};
 {
 	if (self.videoDataOutputQueue)
 		self.videoDataOutputQueue = nil;
+    [self.previewLayer removeFromSuperlayer];
+    [self.session stopRunning];
+    self.session = nil;
 }
 
 // find where the video box is positioned within the preview layer based on the video size and gravity
@@ -183,6 +187,9 @@ static CGFloat DegreesToRadians(CGFloat degrees) {return degrees * M_PI / 180;};
 		videoBox.origin.y = (frameSize.height - size.height) / 2;
 	else
 		videoBox.origin.y = (size.height - frameSize.height) / 2;
+    
+    videoBox.origin.x = (frameSize.width - size.width) / 2;
+    videoBox.origin.y = (frameSize.height - size.height) / 2;
     
 	return videoBox;
 }

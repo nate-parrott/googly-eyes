@@ -306,6 +306,7 @@
 				5F5E4DD11C726CAD009C3446 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

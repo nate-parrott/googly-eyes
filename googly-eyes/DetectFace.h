@@ -5,6 +5,7 @@
 //  DevBridge
 
 #import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
 
 @class DetectFace;
 @protocol DetectFaceDelegate <NSObject>
@@ -16,7 +17,9 @@
 
 @property (nonatomic, strong) UIView *previewView;
 
-- (void)startDetection;
+@property (nonatomic,readonly) AVCaptureDevicePosition position;
+
+- (void)startDetectionWithCamera:(AVCaptureDevicePosition)position;
 - (void)stopDetection;
 
 + (CGRect)convertFrame:(CGRect)originalFrame previewBox:(CGRect)previewBox forVideoBox:(CGRect)videoBox isMirrored:(BOOL)isMirrored;
